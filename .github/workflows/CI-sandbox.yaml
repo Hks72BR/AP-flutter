@@ -5,7 +5,7 @@ on:
     branches: [main]
 
 jobs:
-  security-scan:
+  scan:
     runs-on: ubuntu-latest
 
     steps:
@@ -15,80 +15,62 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.x'
+          flutter-version: '3.22.1'
 
-      # Etapa 1: Tentar baixar APK de uma execução anterior
-      - name: Tentar baixar APK salvo anteriormente
-        id: baixar_apk
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          name: app-release-apk
-          path: ./final_apk
-
-      # Etapa 2: Verificar se o APK foi baixado com sucesso
-      - name: Verificar existência do APK
-        id: apk_check
-        run: |
-          if [ -f final_apk/app-release.apk ]; then
-            echo "APK_FOUND=true" >> $GITHUB_OUTPUT
-          else
-            echo "APK_FOUND=false" >> $GITHUB_OUTPUT
-          fi
-
-      # Etapa 3: Fazer build somente se o APK não foi encontrado
       - name: Build APK
-        if: steps.apk_check.outputs.APK_FOUND == 'false'
         run: |
           cd Shortzz_flutter/Shortzz
           flutter pub get
           flutter build apk --release
-          mkdir -p ../../final_apk
+          mkdir -p final_apk
           cp build/app/outputs/flutter-apk/app-release.apk ../../final_apk/
 
-      # Etapa 4: Fazer upload do APK somente se ele foi gerado nesta execução
-      - name: Upload APK como artefato
-        if: steps.apk_check.outputs.APK_FOUND == 'false'
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-release-apk
-          path: final_apk/app-release.apk
+      - name: Start MobSF in Docker
+        run: |
+          docker pull opensecurity/mobile-security-framework-mobsf
+          docker run -d -p 8080:8000 --name mobsf opensecurity/mobile-security-framework-mobsf
 
-      # Etapa 5: Enviar o APK para o MobSF
+      - name: Aguarda MobSF iniciar (delay)
+        run: sleep 40
+
+      - name: Verificar se MobSF está no ar
+        run: curl http://localhost:8080
+
+      - name: Obter API Key do MobSF
+        id: get_key
+        run: |
+          APIKEY=$(curl -s http://localhost:8080/api/v1/apikey | jq -r '.api_key')
+          echo "APIKEY=$APIKEY" >> $GITHUB_ENV
+
       - name: Upload APK para MobSF
+        id: upload_apk
         run: |
           response=$(curl -s -X POST "http://localhost:8080/api/v1/upload" \
-            -H "Authorization: ${{ secrets.MOBSF_API_KEY }}" \
+            -H "Authorization: $APIKEY" \
             -F "file=@final_apk/app-release.apk")
-
-          echo "Resposta MobSF: $response"
           echo "$response" > mobsf-response.json
           echo "SCAN_HASH=$(echo "$response" | jq -r '.hash')" >> $GITHUB_ENV
 
-      # Etapa 6: Baixar relatórios
-      - name: Upload APK para MobSF
+      - name: Baixar relatório PDF
         run: |
-         response=$(curl -s -X POST "${{ secrets.MOBSF_BASE_URL }}/api/v1/upload" \
-         -H "Authorization: ${{ secrets.MOBSF_API_KEY }}" \
-         -F "file=@final_apk/app-release.apk")
-
-         echo "Resposta MobSF: $response"
-         echo "$response" > mobsf-response.json
-         echo "SCAN_HASH=$(echo "$response" | jq -r '.hash')" >> $GITHUB_ENV
+          curl -X POST "http://localhost:8080/api/v1/download_pdf" \
+            -H "Authorization: $APIKEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"hash\":\"$SCAN_HASH\"}" \
+            -o mobsf-report.pdf
 
       - name: Baixar relatório JSON
         run: |
           curl -X POST "http://localhost:8080/api/v1/report_json" \
-            -H "Authorization: ${{ secrets.MOBSF_API_KEY }}" \
+            -H "Authorization: $APIKEY" \
             -H "Content-Type: application/json" \
             -d "{\"hash\":\"$SCAN_HASH\"}" \
             -o mobsf-report.json
 
-      # Etapa 7: Upload de todos os artefatos de resultado
-      - name: Salvar relatórios e APK
+      - name: Upload artefatos (APK + relatórios)
         uses: actions/upload-artifact@v4
         with:
-          name: security-scan-result
+          name: mobsf-results
           path: |
             final_apk/app-release.apk
             mobsf-report.pdf
