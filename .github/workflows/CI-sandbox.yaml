@@ -15,7 +15,10 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.x'
+          flutter-version: '3.24.3' # Dart 3.5.3
+
+      - name: Instalar dependências
+        run: flutter pub get
 
       - name: Build APK
         run: |
@@ -46,6 +49,8 @@ jobs:
             -F "file=@final_apk/app-release.apk")
           echo "$response" > mobsf-response.json
           echo "SCAN_HASH=$(echo "$response" | jq -r '.hash')" >> $GITHUB_ENV
+        env:
+          APIKEY: ${{ env.APIKEY }}
 
       - name: Baixar relatório PDF
         run: |
@@ -54,6 +59,9 @@ jobs:
             -H "Content-Type: application/json" \
             -d "{\"hash\":\"$SCAN_HASH\"}" \
             -o mobsf-report.pdf
+        env:
+          APIKEY: ${{ env.APIKEY }}
+          SCAN_HASH: ${{ env.SCAN_HASH }}
 
       - name: Baixar relatório JSON
         run: |
@@ -62,6 +70,9 @@ jobs:
             -H "Content-Type: application/json" \
             -d "{\"hash\":\"$SCAN_HASH\"}" \
             -o mobsf-report.json
+        env:
+          APIKEY: ${{ env.APIKEY }}
+          SCAN_HASH: ${{ env.SCAN_HASH }}
 
       - name: Salvar artefatos da análise
         uses: actions/upload-artifact@v4
