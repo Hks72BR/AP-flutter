@@ -10,77 +10,82 @@ jobs:
 
     steps:
       - name: Checkout código
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.x'
 
+      # Etapa 1: Tentar baixar APK de uma execução anterior
       - name: Tentar baixar APK salvo anteriormente
+        id: baixar_apk
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: app-release-apk
-          path: ./build_downloaded
+          path: ./final_apk
 
-      - name: Verificar se APK foi baixado
+      # Etapa 2: Verificar se o APK foi baixado com sucesso
+      - name: Verificar existência do APK
         id: apk_check
         run: |
-          if [ -f build_downloaded/app-release.apk ]; then
+          if [ -f final_apk/app-release.apk ]; then
             echo "APK_FOUND=true" >> $GITHUB_OUTPUT
           else
             echo "APK_FOUND=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Build APK (caso não encontrado)
+      # Etapa 3: Fazer build somente se o APK não foi encontrado
+      - name: Build APK
         if: steps.apk_check.outputs.APK_FOUND == 'false'
         run: |
           cd Shortzz_flutter/Shortzz
           flutter pub get
           flutter build apk --release
+          mkdir -p ../../final_apk
+          cp build/app/outputs/flutter-apk/app-release.apk ../../final_apk/
 
-      - name: Copiar APK para caminho comum
-        run: |
-          mkdir -p ./final_apk
-          if [ -f build_downloaded/app-release.apk ]; then
-            cp build_downloaded/app-release.apk final_apk/
-          else
-            cp Shortzz_flutter/Shortzz/build/app/outputs/flutter-apk/app-release.apk final_apk/
-          fi
+      # Etapa 4: Fazer upload do APK somente se ele foi gerado nesta execução
+      - name: Upload APK como artefato
+        if: steps.apk_check.outputs.APK_FOUND == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: final_apk/app-release.apk
 
-      - name: Verificar APK gerado/copied
-        run: ls -lh final_apk/
-
-      - name: Upload para MobSF
+      # Etapa 5: Enviar o APK para o MobSF
+      - name: Upload APK para MobSF
         run: |
           response=$(curl -s -X POST "http://localhost:8080/api/v1/upload" \
             -H "Authorization: ${{ secrets.MOBSF_API_KEY }}" \
             -F "file=@final_apk/app-release.apk")
 
           echo "Resposta MobSF: $response"
-
           echo "$response" > mobsf-response.json
-
           echo "SCAN_HASH=$(echo "$response" | jq -r '.hash')" >> $GITHUB_ENV
 
-      - name: Baixar relatório PDF
+      # Etapa 6: Baixar relatórios
+      - name: Upload APK para MobSF
         run: |
-          curl -X POST "https://77a8-177-104-203-155.ngrok-free.app " \
-            -H "Authorization: ${{ secrets.MOBSF_API_KEY }}" \
-            -H "Content-Type: application/json" \
-            -d "{\"hash\":\"$SCAN_HASH\"}" \
-            -o mobsf-report.pdf
+         response=$(curl -s -X POST "${{ secrets.MOBSF_BASE_URL }}/api/v1/upload" \
+         -H "Authorization: ${{ secrets.MOBSF_API_KEY }}" \
+         -F "file=@final_apk/app-release.apk")
+
+         echo "Resposta MobSF: $response"
+         echo "$response" > mobsf-response.json
+         echo "SCAN_HASH=$(echo "$response" | jq -r '.hash')" >> $GITHUB_ENV
 
       - name: Baixar relatório JSON
         run: |
-          curl -X POST "http://localhost:8080/api/v1/upload" \
+          curl -X POST "http://localhost:8080/api/v1/report_json" \
             -H "Authorization: ${{ secrets.MOBSF_API_KEY }}" \
             -H "Content-Type: application/json" \
             -d "{\"hash\":\"$SCAN_HASH\"}" \
             -o mobsf-report.json
 
-      - name: Upload artefatos (APK + relatórios)
+      # Etapa 7: Upload de todos os artefatos de resultado
+      - name: Salvar relatórios e APK
         uses: actions/upload-artifact@v4
         with:
           name: security-scan-result
