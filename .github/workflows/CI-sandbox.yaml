@@ -18,7 +18,9 @@ jobs:
           flutter-version: '3.x'
 
       - name: Build APK
-        run: flutter build apk --release
+        run: | 
+          cd Shortzz_flutter/Shortzz
+          flutter build apk --release
 
       - name: Upload APK to MobSF
         run: |
