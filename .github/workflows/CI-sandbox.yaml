@@ -1,0 +1,27 @@
+name: Flutter Security Scan
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.x'
+
+      - name: Build APK
+        run: flutter build apk --release
+
+      - name: Upload APK to MobSF
+        run: |
+          curl -F "file=@build/app/outputs/flutter-apk/app-release.apk" \
+               -H "Authorization: your_mobsf_api_key" \
+               http://your-mobsf-url/api/v1/upload
