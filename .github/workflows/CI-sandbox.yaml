@@ -15,10 +15,7 @@ jobs:
       - name: Setup Flutter (versão anterior que funcionava)
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.6'  # Essa versão tem Dart 3.4.1
-
-      - name: Instalar dependências
-        run: flutter pub get
+          flutter-version: '3.19.6' 
 
       - name: Build APK
         run: |
