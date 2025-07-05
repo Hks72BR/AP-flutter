@@ -1,40 +1,39 @@
-name: Flutter Security Scan
+name: Flutter Build + MobSF Scan
 
 on:
   push:
     branches: [main]
 
 jobs:
-  scan:
+  security-scan:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout código
         uses: actions/checkout@v4
 
-      - name: Setup Flutter
+      - name: Setup Flutter (versão anterior que funcionava)
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.3'
+          flutter-version: '3.19.6'  # Essa versão tem Dart 3.4.1
+
+      - name: Instalar dependências
+        run: flutter pub get
 
       - name: Build APK
         run: |
           cd Shortzz_flutter/Shortzz
-          flutter pub get
           flutter build apk --release
-          mkdir -p final_apk
+          mkdir -p ../../final_apk
           cp build/app/outputs/flutter-apk/app-release.apk ../../final_apk/
 
-      - name: Start MobSF in Docker
+      - name: Start MobSF via Docker
         run: |
           docker pull opensecurity/mobile-security-framework-mobsf
           docker run -d -p 8080:8000 --name mobsf opensecurity/mobile-security-framework-mobsf
 
-      - name: Aguarda MobSF iniciar (delay)
+      - name: Aguardar MobSF iniciar
         run: sleep 40
-
-      - name: Verificar se MobSF está no ar
-        run: curl http://localhost:8080
 
       - name: Obter API Key do MobSF
         id: get_key
@@ -67,7 +66,7 @@ jobs:
             -d "{\"hash\":\"$SCAN_HASH\"}" \
             -o mobsf-report.json
 
-      - name: Upload artefatos (APK + relatórios)
+      - name: Salvar artefatos da análise
         uses: actions/upload-artifact@v4
         with:
           name: mobsf-results
